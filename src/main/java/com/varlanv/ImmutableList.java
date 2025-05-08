@@ -5,38 +5,52 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.function.Consumer;
 import java.util.function.ObjIntConsumer;
+import java.util.function.Supplier;
+import java.util.stream.Collector;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public interface ImmutableList<T> {
 
-    static <T> ImmutableList<T> empty() {
-        return fromIterable(Collections.emptyList());
+    static <T> Collector<T, ?, ImmutableList<T>> toImmutableList() {
+        return Collectors.collectingAndThen(
+                Collectors.toList(),
+                ImmutableList::ofIterable
+        );
     }
 
-    static <T> ImmutableList<T> fromIterable(Iterable<T> items) {
-        var array = new Object[10];
+    static <T> ImmutableList<T> empty() {
+        return ofIterable(Collections.emptyList());
+    }
+
+    static <T> ImmutableList<T> ofIterable(Iterable<T> items) {
+        var capacity = 1;
+        var array = new Object[capacity];
         array[0] = items;
         return new ImmutableListImpl<>(array, 1);
     }
 
-    static <T> ImmutableList<T> fromArray(T[] items) {
-        return fromIterable(Arrays.asList(items));
+    static <T> ImmutableList<T> ofArray(T[] items) {
+        return ofIterable(Arrays.asList(items));
     }
 
-    static <T> ImmutableList<T> fromSingle(T item) {
-        var array = new Object[10];
+    static <T> ImmutableList<T> of(T item) {
+        var capacity = 1;
+        var array = new Object[capacity];
         array[0] = item;
         return new ImmutableListImpl<>(array, 1);
     }
 
     @SafeVarargs
-    static <T> ImmutableList<T> fromAll(T... items) {
-        return fromArray(items);
+    static <T> ImmutableList<T> ofAll(T... items) {
+        return ofArray(items);
     }
 
     ImmutableList<T> add(T item);
 
     ImmutableList<T> addIterable(Iterable<T> items);
+
+    ImmutableList<T> combine(ImmutableList<T> other);
 
     void forEach(Consumer<? super T> action);
 
@@ -45,6 +59,8 @@ public interface ImmutableList<T> {
     int size();
 
     Stream<T> stream();
+
+    <R extends Collection<T>> R copyTo(Supplier<R> supplier);
 }
 
 final class ImmutableListImpl<T> implements ImmutableList<T> {
@@ -61,44 +77,21 @@ final class ImmutableListImpl<T> implements ImmutableList<T> {
 
     @Override
     public ImmutableListImpl<T> add(T item) {
-        var cap = capacity;
-        if (cap == array.length) {
-            return fromAny(item);
-        } else {
-            synchronized (this) {
-                cap = capacity;
-                if (cap == array.length) {
-                    return fromAny(item);
-                } else {
-                    array[cap++] = item;
-                    this.capacity = ++cap;
-                    return new ImmutableListImpl<>(array, limit + 1);
-                }
-            }
-        }
+        return addAny(item);
     }
 
     @Override
     public ImmutableListImpl<T> addIterable(Iterable<T> items) {
-        var cap = capacity;
-        if (cap == array.length) {
-            return fromAny(items);
-        } else {
-            synchronized (this) {
-                cap = capacity;
-                if (cap == array.length) {
-                    return fromAny(items);
-                } else {
-                    array[cap++] = items;
-                    this.capacity = ++cap;
-                    return new ImmutableListImpl<>(array, limit + 1);
-                }
-            }
-        }
+        return addAny(items);
+    }
+
+    @Override
+    public ImmutableList<T> combine(ImmutableList<T> other) {
+        return this;
     }
 
     private ImmutableListImpl<T> fromAny(Object item) {
-        var newArray = Arrays.copyOf(array, array.length * 2);
+        var newArray = Arrays.copyOf(array, array.length + (array.length >> 1));
         newArray[array.length] = item;
         return new ImmutableListImpl<>(newArray, limit + 1);
     }
@@ -106,14 +99,16 @@ final class ImmutableListImpl<T> implements ImmutableList<T> {
     @Override
     public void forEach(Consumer<? super T> action) {
         for (var idx = 0; idx < limit; idx++) {
-            var o = array[idx];
-            if (o instanceof Iterable<?> iterable) {
-                iterable.forEach(it -> {
+            var item = array[idx];
+            if (item instanceof Iterable<?> items) {
+                items.forEach(it -> {
+                    @SuppressWarnings("unchecked")
                     var itCasted = (T) it;
                     action.accept(itCasted);
                 });
             } else {
-                var itCasted = (T) o;
+                @SuppressWarnings("unchecked")
+                var itCasted = (T) item;
                 action.accept(itCasted);
             }
         }
@@ -131,12 +126,51 @@ final class ImmutableListImpl<T> implements ImmutableList<T> {
 
     @Override
     public int size() {
-        return 1;
+        var count = 0;
+        for (int i = 0, limit = this.limit; i < limit; i++) {
+            var o = array[i];
+            if (o instanceof Iterable<?> iterable) {
+                for (var object : iterable) {
+                    count++;
+                }
+            } else {
+                count++;
+            }
+        }
+        return count;
     }
 
     @Override
     public Stream<T> stream() {
         return Stream.empty();
+    }
+
+    @Override
+    public <R extends Collection<T>> R copyTo(Supplier<R> supplier) {
+        var r = supplier.get();
+        forEach(r::add);
+        return r;
+    }
+
+    private ImmutableListImpl<T> addAny(Object item) {
+        Object[] objects = Arrays.copyOf(array, array.length + 1);
+        objects[array.length] = item;
+        return new ImmutableListImpl<>(objects, objects.length);
+//        var cap = capacity;
+//        if (cap == array.length) {
+//            return fromAny(item);
+//        } else {
+//            synchronized (this) {
+//                cap = capacity;
+//                if (cap == array.length) {
+//                    return fromAny(item);
+//                } else {
+//                    array[cap++] = item;
+//                    this.capacity = cap;
+//                    return new ImmutableListImpl<>(array, limit + 1);
+//                }
+//            }
+//        }
     }
 }
 
