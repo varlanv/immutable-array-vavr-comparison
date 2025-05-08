@@ -315,11 +315,8 @@ public final class Bench {
 
         @Override
         public String toString() {
-            return "Result{" +
-                    "average=" + formatTime(average) +
-                    ", min=" + formatTime(BigDecimal.valueOf(min)) +
-                    ", max=" + formatTime(BigDecimal.valueOf(max)) +
-                    '}';
+            return String.format("average -> %s, min -> %s, max -> %s",
+                    formatTime(average), formatTime(BigDecimal.valueOf(min)), formatTime(BigDecimal.valueOf(max)));
         }
 
         private String formatTime(BigDecimal average) {
