@@ -1,0 +1,1 @@
+rootProject.name = "immutable-array-vavr-comparison"
